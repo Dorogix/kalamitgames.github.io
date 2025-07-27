@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title data-key="brand">Космический Центр</title>
+  <!-- Import Google Font for clean modern typography -->
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;600;700&family=Orbitron:wght@400;700&display=swap">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <!-- Navigation bar with language toggle -->
+  <header class="navbar">
+    <div class="container">
+      <!-- Add our custom logo image next to the brand name -->
+      <div class="logo-container">
+        <img src="assets/logo.png" alt="Logo" class="site-logo" width="40" height="40">
+        <span class="logo" data-key="brand">Космический Центр</span>
+      </div>
+      <nav>
+        <ul class="nav-list">
+          <li><a href="#home" data-key="nav_home">Домой</a></li>
+          <li><a href="#tools" data-key="nav_tools">Инструменты</a></li>
+          <li><a href="#certificates" data-key="nav_certificates">Сертификаты</a></li>
+          <li><a href="#support" data-key="nav_support">Поддержка</a></li>
+        </ul>
+      </nav>
+      <div class="lang-toggle">
+        <button id="lang-ru" class="active">RU</button>
+        <button id="lang-en">EN</button>
+      </div>
+    </div>
+  </header>
+
+  <main>
+    <!-- Hero section -->
+    <section id="home" class="hero">
+      <img src="assets/hero-bg.png" alt="Cosmic background" class="hero-bg">
+      <div class="hero-inner container">
+        <h1 data-key="hero_greeting">Добро пожаловать в Космический Центр</h1>
+        <p class="subtitle" data-key="hero_subtitle">Исследуйте инструменты, сертификаты и многое другое</p>
+        <a href="#tools" class="cta" data-key="hero_cta">Исследовать</a>
+      </div>
+    </section>
+
+    <!-- Tools section: DNS and Sign Tools loaded from JSON -->
+    <section id="tools" class="section tools">
+      <div class="container">
+        <h2 class="section-title" data-key="tools_title">DNS и инструменты подписи</h2>
+        <div class="cards">
+          <!-- DNS card -->
+          <div class="card" data-animate>
+            <h3 data-key="dns_title">DNS</h3>
+            <p class="status" data-key="dns_status">Статус: Работает</p>
+            <p class="desc" data-key="dns_desc">Просто настройте свой DNS‑профиль</p>
+            <!-- Direct link to DNS profile download (mobileconfig). Use local asset to avoid redirecting to external site. -->
+            <!-- The mobileconfig file is stored under assets/signed_khoindvn.mobileconfig in this repo. -->
+            <a href="assets/signed_khoindvn.mobileconfig" class="btn small download-btn" data-id="dns" data-url="assets/signed_khoindvn.mobileconfig" download data-key="dns_action">Установить</a>
+          </div>
+
+          <!-- Sign Tools dynamic list will be inserted here -->
+          <div class="card" data-animate>
+            <h3 data-key="sign_title">Инструменты подписи</h3>
+            <ul id="tool-list" class="tool-list">
+              <!-- Populated via script.js -->
+            </ul>
+          </div>
+        </div>
+        <!-- Stats container for visits and downloads (placed outside of the cards grid) -->
+        <div class="stats-container" data-animate>
+          <!-- Total site visits card -->
+          <div class="stat-card visits">
+            <h3 data-key="total_visits">Всего посещений</h3>
+            <span id="visit-count">0</span>
+          </div>
+          <!-- Download counters grid -->
+          <div class="stat-card downloads">
+            <h3 data-key="download_stats">Статистика скачиваний</h3>
+            <div class="counters-grid">
+              <div class="counter-cell">
+                <span class="count-num" id="counter-ksign">0</span>
+                <span class="counter-label" data-key="ksign">KSign</span>
+              </div>
+              <div class="counter-cell">
+                <span class="count-num" id="counter-esign">0</span>
+                <span class="counter-label" data-key="esign">eSign</span>
+              </div>
+              <div class="counter-cell">
+                <span class="count-num" id="counter-ksign-bmw">0</span>
+                <span class="counter-label" data-key="ksign_bmw">KSign BMW</span>
+              </div>
+              <div class="counter-cell">
+                <span class="count-num" id="counter-esign-vnj">0</span>
+                <span class="counter-label" data-key="esign_vnj">eSign VNJ</span>
+              </div>
+              <div class="counter-cell">
+                <span class="count-num" id="counter-certs">0</span>
+                <span class="counter-label" data-key="certs">Certificates</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Certificates section (loaded from JSON) -->
+    <section id="certificates" class="section certificates">
+      <div class="container">
+        <h2 class="section-title" data-key="certificates_title">Сертификаты</h2>
+        <div id="cert-list" class="cards">
+          <!-- Populated via script.js -->
+        </div>
+      </div>
+    </section>
+
+    <!-- Support / Donations section -->
+    <section id="support" class="section support">
+      <div class="container">
+        <h2 class="section-title" data-key="support_title">Поддержать меня</h2>
+        <p class="support-desc" data-key="support_desc">Если вам понравился проект, рассмотрите возможность поддержать меня:</p>
+        <div class="donate-list">
+          <a href="https://ko-fi.com/kalamit23567" class="donate-link" title="Ko‑fi" target="_blank" rel="noopener">
+            <span data-key="donate_kofi">Ko‑fi</span>
+          </a>
+          <a href="https://donatello.to/Kalamit" class="donate-link" title="Donatello" target="_blank" rel="noopener">
+            <span data-key="donate_donatello">Donatello</span>
+          </a>
+          <a href="https://donatepay.eu/don/Kalamit" class="donate-link" title="DonatePay" target="_blank" rel="noopener">
+            <span data-key="donate_donatepay">DonatePay</span>
+          </a>
+        </div>
+        <div class="social-list">
+          <a href="https://youtube.com/@KalamitYT" class="social-link" target="_blank" rel="noopener" title="YouTube">
+            <!-- YouTube icon -->
+            <svg class="icon" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+              <path d="M23.498 6.186a2.995 2.995 0 0 0-2.116-2.112C19.741 3.5 12 3.5 12 3.5s-7.741 0-9.389.574a2.995 2.995 0 0 0-2.116 2.112A31.401 31.401 0 0 0 0 12a31.401 31.401 0 0 0 .503 5.814 2.995 2.995 0 0 0 2.116 2.112C4.259 20.5 12 20.5 12 20.5s7.741 0 9.389-.574a2.995 2.995 0 0 0 2.116-2.112A31.401 31.401 0 0 0 24 12a31.401 31.401 0 0 0-.502-5.814zM9.5 15.299V8.701l6.392 3.299-6.392 3.299z" fill="currentColor"/>
+            </svg>
+          </a>
+          <a href="https://t.me/KalamitGames" class="social-link" target="_blank" rel="noopener" title="Telegram">
+            <!-- Telegram icon -->
+            <svg class="icon" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+              <path d="M22.5 2.499a1.875 1.875 0 0 0-2.116-.321L1.938 11.222a.938.938 0 0 0 .094 1.717l4.76 1.585 2.187 6.553a.938.938 0 0 0 1.52.43l3.22-3.046 4.223 3.247a.938.938 0 0 0 1.486-.503l3.75-17.812a.938.938 0 0 0-.667-1.394z" fill="currentColor"/>
+            </svg>
+          </a>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <!-- Footer -->
+  <footer class="footer">
+    <div class="container">
+      <p data-key="footer_text">© 2025 Космический Центр. Все права защищены.</p>
+    </div>
+  </footer>
+
+  <script src="script.js"></script>
+</body>
+</html>
