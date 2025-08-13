@@ -1,34 +1,41 @@
 name: Update Statuses
 
-# This workflow periodically checks the upstream khoindvn.io.vn site to
-# determine whether KSign and eSign are available (based on the presence
-# of checkmark icons in the HTML) and updates the local data/statuses.json
-# accordingly. It runs every 6 hours and can also be triggered manually.
-
 on:
   schedule:
-    # Every 6 hours
-    - cron: '0 */6 * * *'
-  workflow_dispatch:
+    - cron: "0 * * * *"      # каждый час
+  push:
+    branches: [ main ]       # плюс при каждом твоём коммите в main
+  workflow_dispatch:          # и вручную по кнопке
+
+permissions:
+  contents: write             # нужно для git push
 
 jobs:
   update:
     runs-on: ubuntu-latest
     steps:
-      - name: Check out repository
-        uses: actions/checkout@v3
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          persist-credentials: true
+
       - name: Set up Node.js
         uses: actions/setup-node@v3
         with:
-          node-version: '18'
+          node-version: "18"
+
       - name: Run update script
         run: node scripts/update.js
-      - name: Commit and push if data changed
+
+      - name: Commit & push if changed
         run: |
-          git config user.name "GitHub Actions"
-          git config user.email "actions@github.com"
-          if [[ $(git status --porcelain) ]]; then
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          if [[ -n "$(git status --porcelain)" ]]; then
             git add data/statuses.json
-            git commit -m "chore: update statuses"
+            git commit -m "chore: update statuses [skip ci]"
             git push
+          else
+            echo "No changes"
           fi
