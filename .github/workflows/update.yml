@@ -28,14 +28,21 @@ jobs:
       - name: Run update script
         run: node scripts/update.js
 
-      - name: Commit & push if changed
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          if [[ -n "$(git status --porcelain)" ]]; then
-            git add data/statuses.json
-            git commit -m "chore: update statuses [skip ci]"
-            git push
+     - name: Commit & push if changed
+  run: |
+    git config user.name "github-actions[bot]"
+    git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+    # Добавляем все изменения в папке data
+    git add -A data
+
+    # Если изменений нет — пропускаем
+    if git diff --cached --quiet; then
+      echo "No changes to commit"
+    else
+      git commit -m "chore: auto-sync khoindvn [skip ci]"
+      git push
+    fi
           else
             echo "No changes"
           fi
