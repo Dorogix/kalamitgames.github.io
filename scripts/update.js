@@ -1,4 +1,5 @@
-// scripts/update.js (CommonJS, Node 18+, без зависимостей)
+// scripts/update.js — CommonJS, Node 18+, без внешних зависимостей
+// Парсит https://khoindvn.io.vn/ и формирует data/statuses.json + data/khoindvn.json
 
 const fs = require('node:fs');
 const path = require('node:path');
@@ -11,67 +12,97 @@ async function fetchText(url) {
   return r.text();
 }
 const toAbs = (h) => { try { return new URL(h, BASE).href } catch { return null } };
-const kindOf = (href, text='') => {
-  const h = href.toLowerCase(), t = text.toLowerCase();
+
+function classify(href, text='') {
+  const h = href.toLowerCase();
+  const t = String(text).toLowerCase();
   if (h.endsWith('.ipa') || t.includes('ipa')) return 'app';
   if (/\.(cer|crt|pem)\b/i.test(h) || t.includes('cert')) return 'certificate';
   if (h.endsWith('.mobileconfig') || /dns|profile/.test(t)) return 'dns';
   return null;
-};
-function links(html) {
+}
+
+// Простой сбор всех <a href="...">текст</a> без внешних либ
+function extractLinks(html) {
   const out = [];
   const re = /<a[^>]*href=["']([^"']+)["'][^>]*>([\s\S]*?)<\/a>/gi;
-  let m; while ((m = re.exec(html))) {
-    const href = toAbs(m[1].trim()); if (!href) continue;
-    const text = m[2].replace(/<[^>]+>/g,' ').replace(/\s+/g,' ').trim() || href;
+  let m;
+  while ((m = re.exec(html))) {
+    const href = toAbs(m[1].trim());
+    if (!href) continue;
+    const text = m[2].replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim() || href;
     out.push({ href, text });
   }
   return out;
 }
+
+// Доступность: HEAD → (если нет) GET
 async function reachable(url) {
   try {
-    const h = await fetch(url, { method:'HEAD', redirect:'follow' });
-    if (h.ok || (h.status>=200 && h.status<400)) return true;
+    const h = await fetch(url, { method: 'HEAD', redirect: 'follow' });
+    if (h.ok || (h.status >= 200 && h.status < 400)) return true;
   } catch {}
   try {
-    const g = await fetch(url, { method:'GET', redirect:'follow' });
-    return g.ok || (g.status>=200 && g.status<400);
-  } catch { return false }
+    const g = await fetch(url, { method: 'GET', redirect: 'follow' });
+    return g.ok || (g.status >= 200 && g.status < 400);
+  } catch {
+    return false;
+  }
 }
-async function mapLimit(arr, n, fn) {
-  const out = []; let i=0;
-  await Promise.all(Array.from({length: Math.min(n, arr.length)}, async () => {
-    while (i < arr.length) { const idx = i++; out[idx] = await fn(arr[idx], idx); }
-  }));
+
+// Ограничитель параллельности
+async function mapLimit(items, limit, fn) {
+  const out = [];
+  let i = 0;
+  const workers = Array.from({ length: Math.min(limit, items.length) }, async () => {
+    while (i < items.length) {
+      const idx = i++;
+      out[idx] = await fn(items[idx], idx);
+    }
+  });
+  await Promise.all(workers);
   return out;
+}
+
+function idFromName(name, fallbackPrefix, idx) {
+  const n = String(name).toLowerCase();
+  if (n.includes('esign') && n.includes('vnj')) return 'esign-vnj';
+  if (n.includes('esign')) return 'esign';
+  if (n.includes('ksign') && n.includes('bmw')) return 'ksign-bmw';
+  if (n.includes('ksign')) return 'ksign';
+  return `${fallbackPrefix}-${idx + 1}`;
 }
 
 async function main() {
   const html = await fetchText(BASE);
-  const all = links(html);
+  const links = extractLinks(html);
 
+  // Классифицируем ссылки по типам (приложения/сертификаты/DNS)
   const items = [];
-  for (const L of all) {
-    const kind = kindOf(L.href, L.text);
+  for (const L of links) {
+    const kind = classify(L.href, L.text);
     if (!kind) continue;
     items.push({ kind, name: L.text, url: L.href });
   }
 
-  await mapLimit(items, 6, async (it) => { it.status = await reachable(it.url); return it; });
+  // Проверяем доступность (это и будет “статус”)
+  await mapLimit(items, 6, async (it) => {
+    it.status = await reachable(it.url);
+    return it;
+  });
 
+  // Дедуплим по URL и раскладываем в формат фронтенда
+  const seen = new Set();
   const tools = [];
   const certificates = [];
-  const seen = new Set();
 
-  for (const it of items) {
-    if (seen.has(it.url)) continue; seen.add(it.url);
+  items.forEach((it, i) => {
+    if (seen.has(it.url)) return;
+    seen.add(it.url);
+
     if (it.kind === 'app') {
       tools.push({
-        id: it.name.toLowerCase().includes('esign') ? 'esign'
-           : it.name.toLowerCase().includes('bmw') ? 'ksign-bmw'
-           : it.name.toLowerCase().includes('ksign') ? 'ksign'
-           : it.name.toLowerCase().includes('vnj') ? 'esign-vnj'
-           : `app-${tools.length+1}`,
+        id: idFromName(it.name, 'app', tools.length),
         name: it.name,
         status: !!it.status,
         description: 'Ссылка с khoindvn.io.vn',
@@ -79,19 +110,33 @@ async function main() {
       });
     } else {
       certificates.push({
-        id: `cert-${certificates.length+1}`,
+        id: idFromName(it.name, 'cert', certificates.length),
         name: it.kind === 'dns' ? 'DNS / Profile' : 'Certificate',
         description: it.name,
         url: it.url
       });
     }
-  }
+  });
 
-  const payload = { tools, certificates };
+  // Пишем файлы данных
   const outDir = path.join(__dirname, '..', 'data');
   fs.mkdirSync(outDir, { recursive: true });
-  fs.writeFileSync(path.join(outDir, 'statuses.json'), JSON.stringify(payload, null, 2), 'utf8');
-  console.log(`Updated data/statuses.json: ${tools.length} tools, ${certificates.length} certificates`);
+
+  const statuses = { tools, certificates };
+  fs.writeFileSync(path.join(outDir, 'statuses.json'), JSON.stringify(statuses, null, 2), 'utf8');
+
+  const khoindvn = {
+    source: BASE,
+    last_synced: new Date().toISOString(),
+    apps: tools,
+    certificates,
+  };
+  fs.writeFileSync(path.join(outDir, 'khoindvn.json'), JSON.stringify(khoindvn, null, 2), 'utf8');
+
+  console.log(`OK: tools=${tools.length}, certificates=${certificates.length}`);
 }
 
-main().catch(e => { console.error(e); process.exit(1); });
+main().catch((e) => {
+  console.error('UPDATE FAILED:', e);
+  process.exit(1);
+});
