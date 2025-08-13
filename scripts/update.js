@@ -1,5 +1,4 @@
 // scripts/update.js — CommonJS, Node 18+, без внешних зависимостей
-// Парсит https://khoindvn.io.vn/ и формирует data/statuses.json + data/khoindvn.json
 
 const fs = require('node:fs');
 const path = require('node:path');
@@ -22,7 +21,36 @@ function classify(href, text='') {
   return null;
 }
 
-// Простой сбор всех <a href="...">текст</a> без внешних либ
+// ---- pretty helpers ----
+function fileName(url) {
+  try {
+    const u = new URL(url);
+    const last = u.pathname.split('/').filter(Boolean).pop() || '';
+    return decodeURIComponent(last);
+  } catch { return '' }
+}
+function host(url) {
+  try { return new URL(url).host } catch { return '' }
+}
+function prettyCertName(url, rawText, kind) {
+  const f = fileName(url).toLowerCase();
+  const h = host(url).toLowerCase();
+
+  if (kind === 'dns') return 'DNS / Profile';
+  if (f.includes('cert') || h.startsWith('cert.')) return 'Certificate Pack';
+  if (f.endsWith('.cer') || f.endsWith('.crt') || f.endsWith('.pem')) return 'Certificate';
+  if (h.includes('github')) return 'Certificate Pack';
+  return 'Certificate';
+}
+function prettyCertDesc(url, rawText) {
+  const f = fileName(url);
+  if (f) return f;                       // показываем читабельное имя файла
+  if (rawText && rawText.length < 60) return rawText;
+  return host(url) || url;               // коротко
+}
+
+// ------------------------
+
 function extractLinks(html) {
   const out = [];
   const re = /<a[^>]*href=["']([^"']+)["'][^>]*>([\s\S]*?)<\/a>/gi;
@@ -36,7 +64,6 @@ function extractLinks(html) {
   return out;
 }
 
-// Доступность: HEAD → (если нет) GET
 async function reachable(url) {
   try {
     const h = await fetch(url, { method: 'HEAD', redirect: 'follow' });
@@ -45,12 +72,9 @@ async function reachable(url) {
   try {
     const g = await fetch(url, { method: 'GET', redirect: 'follow' });
     return g.ok || (g.status >= 200 && g.status < 400);
-  } catch {
-    return false;
-  }
+  } catch { return false }
 }
 
-// Ограничитель параллельности
 async function mapLimit(items, limit, fn) {
   const out = [];
   let i = 0;
@@ -77,7 +101,6 @@ async function main() {
   const html = await fetchText(BASE);
   const links = extractLinks(html);
 
-  // Классифицируем ссылки по типам (приложения/сертификаты/DNS)
   const items = [];
   for (const L of links) {
     const kind = classify(L.href, L.text);
@@ -85,13 +108,12 @@ async function main() {
     items.push({ kind, name: L.text, url: L.href });
   }
 
-  // Проверяем доступность (это и будет “статус”)
   await mapLimit(items, 6, async (it) => {
     it.status = await reachable(it.url);
     return it;
   });
 
-  // Дедуплим по URL и раскладываем в формат фронтенда
+  // Сборка итогового JSON
   const seen = new Set();
   const tools = [];
   const certificates = [];
@@ -103,22 +125,23 @@ async function main() {
     if (it.kind === 'app') {
       tools.push({
         id: idFromName(it.name, 'app', tools.length),
-        name: it.name,
-        status: !!it.status,
+        name: it.name,                      // реальное имя из источника
+        status: !!it.status,                // ✔/✖
         description: 'Ссылка с khoindvn.io.vn',
         url: it.url
       });
     } else {
+      const friendlyName = prettyCertName(it.url, it.name, it.kind);
+      const desc = prettyCertDesc(it.url, it.name);
       certificates.push({
-        id: idFromName(it.name, 'cert', certificates.length),
-        name: it.kind === 'dns' ? 'DNS / Profile' : 'Certificate',
-        description: it.name,
+        id: idFromName(friendlyName + '-' + desc, 'cert', certificates.length),
+        name: friendlyName,                 // красивое короткое имя
+        description: desc,                  // короткое описание (имя файла/хост)
         url: it.url
       });
     }
   });
 
-  // Пишем файлы данных
   const outDir = path.join(__dirname, '..', 'data');
   fs.mkdirSync(outDir, { recursive: true });
 
