@@ -1,34 +1,49 @@
 name: Update Statuses
 
-# This workflow periodically checks the upstream khoindvn.io.vn site to
-# determine whether KSign and eSign are available (based on the presence
-# of checkmark icons in the HTML) and updates the local data/statuses.json
-# accordingly. It runs every 6 hours and can also be triggered manually.
-
 on:
   schedule:
-    # Every 6 hours
-    - cron: '0 */6 * * *'
-  workflow_dispatch:
+    - cron: "0 */6 * * *"     # каждые 6 часов
+  workflow_dispatch:           # запуск вручную
+
+permissions:
+  contents: write
 
 jobs:
   update:
     runs-on: ubuntu-latest
     steps:
-      - name: Check out repository
-        uses: actions/checkout@v3
-      - name: Set up Node.js
+      - name: Checkout repo
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0              # нужно для rebase
+          persist-credentials: true
+
+      - name: Setup Node.js
         uses: actions/setup-node@v3
         with:
-          node-version: '18'
+          node-version: "18"
+
+      # ТВОЙ скрипт должен лежать в scripts/update.js
       - name: Run update script
         run: node scripts/update.js
-      - name: Commit and push if data changed
+
+      - name: Commit & push if changed (with rebase)
+        env:
+          BRANCH: ${{ github.ref_name }}
         run: |
-          git config user.name "GitHub Actions"
-          git config user.email "actions@github.com"
-          if [[ $(git status --porcelain) ]]; then
-            git add data/statuses.json
-            git commit -m "chore: update statuses"
-            git push
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          # если нет изменений — выходим
+          if [[ -z "$(git status --porcelain)" ]]; then
+            echo "No changes"; exit 0
           fi
+
+          git add data/statuses.json
+          git commit -m "chore: update statuses"
+
+          # подтянуть чужие коммиты и надеть наш поверх
+          git pull --rebase origin "$BRANCH"
+
+          # пуш в ту же ветку
+          git push origin HEAD:"$BRANCH"
