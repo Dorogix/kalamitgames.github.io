@@ -2,13 +2,18 @@ name: Update Statuses
 
 on:
   schedule:
-    - cron: "0 * * * *"      # запускаем каждый час
+    - cron: "0 * * * *"      # запуск каждый час
   push:
-    branches: [ main ]       # и при каждом твоём коммите в main
-  workflow_dispatch:          # плюс ручной запуск из вкладки Actions
+    branches: [ main ]       # и при каждом пуше в main
+  workflow_dispatch:          # вручную из вкладки Actions
 
 permissions:
-  contents: write             # нужно, чтобы бот мог пушить изменения
+  contents: write
+
+# не допускаем параллельных запусков, чтобы не ловить конфликты пуша
+concurrency:
+  group: update-statuses
+  cancel-in-progress: false
 
 jobs:
   update:
@@ -20,6 +25,7 @@ jobs:
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
           persist-credentials: true
+          fetch-depth: 0          # нужно для pull --rebase
 
       - name: Set up Node.js
         uses: actions/setup-node@v3
@@ -29,19 +35,25 @@ jobs:
       - name: Run update script
         run: node scripts/update.js
 
-      # 🔧 Исправленный шаг коммита: добавляем все изменения в data/ и коммитим только если есть что коммитить
-      - name: Commit & push if changed
+      - name: Commit & push if changed (with rebase)
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
-          # Добавляем все изменения в папке data (и новые файлы тоже)
+          # Добавляем все изменения в data/
           git add -A data
 
-          # Если изменений нет — выходим без ошибки
+          # Если в стейдже ничего нет — выходим без ошибки
           if git diff --cached --quiet; then
             echo "No changes to commit"
-          else
-            git commit -m "chore: auto-sync khoindvn [skip ci]"
-            git push
+            exit 0
           fi
+
+          # Локальный коммит
+          git commit -m "chore: auto-sync khoindvn [skip ci]"
+
+          # Подтягиваем удалённые изменения и ребейзим наш коммит
+          git pull --rebase --autostash origin main
+
+          # Пушим после rebase
+          git push
