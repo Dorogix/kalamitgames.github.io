@@ -2,7 +2,7 @@
   "tools": [],
   "certificates": [
     {
-      "id": "cert-1",
+      "id": "esign",
       "name": "DNS / Profile",
       "description": "Certs-Khoindvn.zip",
       "url": "https://github.com/esigncert/khoindvn/raw/refs/heads/main/document/DNS/Certs-Khoindvn.zip"
@@ -13,5 +13,8 @@
       "description": "https://cert.khoindvn.io.vn/",
       "url": "https://cert.khoindvn.io.vn/"
     }
-  ]
+  ],
+  "dns": {
+    "install": "https://github.com/esigncert/khoindvn/raw/refs/heads/main/document/DNS/Certs-Khoindvn.zip"
+  }
 }
