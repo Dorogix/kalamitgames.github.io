@@ -1,18 +1,16 @@
 {
-  "tools": [
-    {
-      "id": "esign",
-      "name": "eSign",
-      "url": "https://github.com/esigncert/khoindvn/raw/refs/heads/main/document/DNS/Certs-Khoindvn.zip",
-      "status": true,
-      "description": "Ссылка с khoindvn.io.vn"
-    }
-  ],
+  "tools": [],
   "certificates": [
     {
       "id": "cert-1",
+      "name": "DNS / Profile",
+      "description": "Certs-Khoindvn.zip",
+      "url": "https://github.com/esigncert/khoindvn/raw/refs/heads/main/document/DNS/Certs-Khoindvn.zip"
+    },
+    {
+      "id": "cert-2",
       "name": "Certificate Pack",
-      "description": "cert.khoindvn.io.vn",
+      "description": "https://cert.khoindvn.io.vn/",
       "url": "https://cert.khoindvn.io.vn/"
     }
   ]
