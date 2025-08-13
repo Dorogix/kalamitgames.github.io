@@ -3,21 +3,21 @@
     {
       "id": "ksign",
       "name": "KSign",
-      "status": true,
+      "status": false,
       "description": "Мощный инструмент для подписи, поддерживающий iOS 16.0 и новее",
       "url": "https://loadly.io/57jdwiXt"
     },
     {
       "id": "esign",
       "name": "eSign",
-      "status": true,
+      "status": false,
       "description": "Популярный инструмент для подписания iPA‑файлов, обновляемый автоматически",
       "url": "https://loadly.io/KDxT6fCO"
     },
     {
       "id": "ksign-bmw",
       "name": "KSign BMW",
-      "status": true,
+      "status": false,
       "description": "Вариант KSign от BMW Brilliance Automotive Ltd",
       "url": "https://loadly.io/dKaQsrKZ"
     },
