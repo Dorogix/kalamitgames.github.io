@@ -1,13 +1,8 @@
-// scripts/update.js
-// Парсит https://khoindvn.io.vn/ и формирует data/statuses.json
-// Node 18+ (встроенный fetch), без зависимостей.
+// scripts/update.js (CommonJS, Node 18+, без зависимостей)
 
-import fs from 'node:fs';
-import path from 'node:path';
-import { fileURLToPath } from 'node:url';
+const fs = require('node:fs');
+const path = require('node:path');
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
 const BASE = 'https://khoindvn.io.vn/';
 
 async function fetchText(url) {
@@ -55,7 +50,6 @@ async function main() {
   const html = await fetchText(BASE);
   const all = links(html);
 
-  // Классифицируем, собираем имя+ссылку
   const items = [];
   for (const L of all) {
     const kind = kindOf(L.href, L.text);
@@ -63,10 +57,8 @@ async function main() {
     items.push({ kind, name: L.text, url: L.href });
   }
 
-  // Проверяем доступность (галочка/крестик)
   await mapLimit(items, 6, async (it) => { it.status = await reachable(it.url); return it; });
 
-  // Формат под твой фронтенд (script.js)
   const tools = [];
   const certificates = [];
   const seen = new Set();
