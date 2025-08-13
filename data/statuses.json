@@ -1,39 +1,18 @@
 {
-  "tools": [
+  "tools": [],
+  "certificates": [
     {
-      "id": "ksign",
-      "name": "KSign",
-      "status": false,
-      "description": "Мощный инструмент для подписи, поддерживающий iOS 16.0 и новее",
-      "url": "https://loadly.io/57jdwiXt"
+      "id": "httpscertkhoindvniovn",
+      "name": "https://cert.khoindvn.io.vn/",
+      "status": true,
+      "description": "Ссылка с khoindvn.io.vn",
+      "url": "https://cert.khoindvn.io.vn/"
     },
     {
       "id": "esign",
-      "name": "eSign",
-      "status": false,
-      "description": "Популярный инструмент для подписания iPA‑файлов, обновляемый автоматически",
-      "url": "https://loadly.io/KDxT6fCO"
-    },
-    {
-      "id": "ksign-bmw",
-      "name": "KSign BMW",
-      "status": false,
-      "description": "Вариант KSign от BMW Brilliance Automotive Ltd",
-      "url": "https://loadly.io/dKaQsrKZ"
-    },
-    {
-      "id": "esign-vnj",
-      "name": "eSign VNJ",
-      "status": false,
-      "description": "Сертификат временно недоступен для загрузки",
-      "url": "https://loadly.io/vnjes8ios"
-    }
-  ],
-  "certificates": [
-    {
-      "id": "certs",
-      "name": "Certificates",
-      "description": "Скачать все сертификаты одним архивом",
+      "name": "https://github.com/esigncert/khoindvn/raw/refs/heads/main/document/DNS/Certs-Khoindvn.zip",
+      "status": true,
+      "description": "Ссылка с khoindvn.io.vn",
       "url": "https://github.com/esigncert/khoindvn/raw/refs/heads/main/document/DNS/Certs-Khoindvn.zip"
     }
   ]
