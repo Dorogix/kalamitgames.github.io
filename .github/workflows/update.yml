@@ -2,8 +2,8 @@ name: Update Statuses
 
 on:
   schedule:
-    - cron: "0 */6 * * *"     # каждые 6 часов
-  workflow_dispatch:           # запуск вручную
+    - cron: "0 */6 * * *"   # каждые 6 часов
+  workflow_dispatch:
 
 permissions:
   contents: write
@@ -15,7 +15,7 @@ jobs:
       - name: Checkout repo
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0              # нужно для rebase
+          fetch-depth: 0
           persist-credentials: true
 
       - name: Setup Node.js
@@ -23,7 +23,11 @@ jobs:
         with:
           node-version: "18"
 
-      # ТВОЙ скрипт должен лежать в scripts/update.js
+      - name: Install deps
+        run: |
+          npm init -y >/dev/null 2>&1 || true
+          npm i cheerio@1.0.0-rc.12
+
       - name: Run update script
         run: node scripts/update.js
 
@@ -33,17 +37,10 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-
-          # если нет изменений — выходим
           if [[ -z "$(git status --porcelain)" ]]; then
             echo "No changes"; exit 0
           fi
-
           git add data/statuses.json
           git commit -m "chore: update statuses"
-
-          # подтянуть чужие коммиты и надеть наш поверх
           git pull --rebase origin "$BRANCH"
-
-          # пуш в ту же ветку
           git push origin HEAD:"$BRANCH"
