@@ -142,12 +142,7 @@ document.addEventListener('DOMContentLoaded', () => {
         btn.addEventListener('click', (e) => {
           const id = btn.dataset.id;
           // increment local counter for this download
-          counts[id] = (counts[id] || 0) + 1;
-          localStorage.setItem('counts', JSON.stringify(counts));
-          // Inline counts have been removed; update occurs only in the stats grid
-          // Update separate counters grid if present
-          const gridCounter = document.getElementById('counter-' + id);
-          if (gridCounter) gridCounter.textContent = counts[id];
+          incrementDownloadCount(id);
           // do not prevent default; letting the browser handle the download via the anchor's href and download attribute
           // this ensures direct download when permitted by the remote server
         });
@@ -155,27 +150,80 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
+  /*
+    Increment the download count for a given tool both globally (via countapi)
+    and locally (via localStorage) and update the corresponding stat cell.
+    If the remote API is unreachable, only the local counter will be updated.
+  */
+  function incrementDownloadCount(id) {
+    const updateLocal = (newVal) => {
+      counts[id] = newVal;
+      localStorage.setItem('counts', JSON.stringify(counts));
+      const gridCounter = document.getElementById('counter-' + id);
+      if (gridCounter) gridCounter.textContent = counts[id];
+    };
+    // Attempt to increment remote counter
+    const tryIncrement = (url) => fetch(url)
+      .then(res => res.json())
+      .then(data => {
+        updateLocal(data.value);
+        return true;
+      });
+    tryIncrement(`https://countapi.xyz/hit/kalamitgames/${id}`)
+      .catch(() => tryIncrement(`https://api.countapi.xyz/hit/kalamitgames/${id}`))
+      .catch(() => {
+        // remote unreachable; fall back to local increment
+        updateLocal((counts[id] || 0) + 1);
+      });
+  }
+
   // Render counters in the separate stats grid
   function renderCounters() {
     const ids = ['ksign', 'esign', 'ksign-bmw', 'esign-vnj', 'certs'];
     ids.forEach(id => {
       const el = document.getElementById('counter-' + id);
-      if (el) {
-        el.textContent = counts[id] || 0;
-      }
+      if (!el) return;
+      // Attempt to fetch the global count
+      const updateLocal = (val) => {
+        counts[id] = val;
+        localStorage.setItem('counts', JSON.stringify(counts));
+        el.textContent = counts[id];
+      };
+      const tryGet = (url) => fetch(url)
+        .then(res => res.json())
+        .then(data => {
+          updateLocal(data.value);
+          return true;
+        });
+      tryGet(`https://countapi.xyz/get/kalamitgames/${id}`)
+        .catch(() => tryGet(`https://api.countapi.xyz/get/kalamitgames/${id}`))
+        .catch(() => {
+          // remote unreachable; use local value
+          updateLocal(counts[id] || 0);
+        });
     });
   }
 
   // Initialise visit counter using countapi.xyz; fall back to localStorage if fetch fails
   function initVisits() {
-    // Attempt to increment global counter
-    fetch('https://api.countapi.xyz/update/kalamitgames/cosmic-site?amount=1')
-      .then(res => res.json())
-      .then(data => {
-        document.getElementById('visit-count').textContent = data.value;
-      })
+    /*
+      Use countapi.xyz to maintain a global visit counter. The endpoint
+      `https://countapi.xyz/hit/namespace/key` will atomically increment
+      and return the new count. In some environments the subdomain
+      `api.countapi.xyz` may be blocked, so we try both domains in
+      succession. If both fail (e.g. no network), fall back to a
+      localStorage counter that counts only visits on this device.
+    */
+    const updateCount = (url) =>
+      fetch(url)
+        .then(res => res.json())
+        .then(data => {
+          document.getElementById('visit-count').textContent = data.value;
+          return true;
+        });
+    updateCount('https://countapi.xyz/hit/kalamitgames/cosmic-site')
+      .catch(() => updateCount('https://api.countapi.xyz/hit/kalamitgames/cosmic-site'))
       .catch(() => {
-        // fallback to localStorage for local visits
         const localVisits = parseInt(localStorage.getItem('visits') || '0', 10) + 1;
         localStorage.setItem('visits', localVisits);
         document.getElementById('visit-count').textContent = localVisits;
