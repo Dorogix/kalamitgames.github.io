@@ -1,59 +1,34 @@
 name: Update Statuses
 
+# This workflow periodically checks the upstream khoindvn.io.vn site to
+# determine whether KSign and eSign are available (based on the presence
+# of checkmark icons in the HTML) and updates the local data/statuses.json
+# accordingly. It runs every 6 hours and can also be triggered manually.
+
 on:
   schedule:
-    - cron: "0 * * * *"      # запуск каждый час
-  push:
-    branches: [ main ]       # и при каждом пуше в main
-  workflow_dispatch:          # вручную из вкладки Actions
-
-permissions:
-  contents: write
-
-# не допускаем параллельных запусков, чтобы не ловить конфликты пуша
-concurrency:
-  group: update-statuses
-  cancel-in-progress: false
+    # Every 6 hours
+    - cron: '0 */6 * * *'
+  workflow_dispatch:
 
 jobs:
   update:
     runs-on: ubuntu-latest
-
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
-          persist-credentials: true
-          fetch-depth: 0          # нужно для pull --rebase
-
+      - name: Check out repository
+        uses: actions/checkout@v3
       - name: Set up Node.js
         uses: actions/setup-node@v3
         with:
-          node-version: "18"
-
+          node-version: '18'
       - name: Run update script
         run: node scripts/update.js
-
-      - name: Commit & push if changed (with rebase)
+      - name: Commit and push if data changed
         run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-
-          # Добавляем все изменения в data/
-          git add -A data
-
-          # Если в стейдже ничего нет — выходим без ошибки
-          if git diff --cached --quiet; then
-            echo "No changes to commit"
-            exit 0
+          git config user.name "GitHub Actions"
+          git config user.email "actions@github.com"
+          if [[ $(git status --porcelain) ]]; then
+            git add data/statuses.json
+            git commit -m "chore: update statuses"
+            git push
           fi
-
-          # Локальный коммит
-          git commit -m "chore: auto-sync khoindvn [skip ci]"
-
-          # Подтягиваем удалённые изменения и ребейзим наш коммит
-          git pull --rebase --autostash origin main
-
-          # Пушим после rebase
-          git push
