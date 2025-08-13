@@ -1,4 +1,5 @@
 // scripts/update.js — CommonJS, Node 18+, без внешних зависимостей
+// Парсит https://khoindvn.io.vn/ и формирует data/statuses.json + data/khoindvn.json
 
 const fs = require('node:fs');
 const path = require('node:path');
@@ -12,54 +13,30 @@ async function fetchText(url) {
 }
 const toAbs = (h) => { try { return new URL(h, BASE).href } catch { return null } };
 
+// --- классификация и "красота" ---
+const isIpa = (u) => /\.ipa(\?|$)/i.test(u);
+const isRawZip = (u) => /\.(zip|rar|7z)(\?|$)/i.test(u);
+const isCertFile = (u) => /\.(cer|crt|pem)(\?|$)/i.test(u);
+const isMobileConfig = (u) => /\.mobileconfig(\?|$)/i.test(u);
+
 function classify(href, text='') {
   const h = href.toLowerCase();
   const t = String(text).toLowerCase();
-  if (h.endsWith('.ipa') || t.includes('ipa')) return 'app';
-  if (/\.(cer|crt|pem)\b/i.test(h) || t.includes('cert')) return 'certificate';
-  if (h.endsWith('.mobileconfig') || /dns|profile/.test(t)) return 'dns';
+  if (isIpa(h) || /ksign|esign/.test(t) || /ksign|esign/.test(h)) return 'app';
+  if (isMobileConfig(h) || /dns|profile/.test(t) || /dns/.test(h)) return 'dns';
+  if (isCertFile(h) || /cert/.test(t) || /cert/.test(h) || isRawZip(h)) return 'certificate';
   return null;
 }
-
-// ---- pretty helpers ----
-function fileName(url) {
-  try {
-    const u = new URL(url);
-    const last = u.pathname.split('/').filter(Boolean).pop() || '';
-    return decodeURIComponent(last);
-  } catch { return '' }
-}
-function host(url) {
-  try { return new URL(url).host } catch { return '' }
-}
-function prettyCertName(url, rawText, kind) {
-  const f = fileName(url).toLowerCase();
-  const h = host(url).toLowerCase();
-
-  if (kind === 'dns') return 'DNS / Profile';
-  if (f.includes('cert') || h.startsWith('cert.')) return 'Certificate Pack';
-  if (f.endsWith('.cer') || f.endsWith('.crt') || f.endsWith('.pem')) return 'Certificate';
-  if (h.includes('github')) return 'Certificate Pack';
-  return 'Certificate';
-}
-function prettyCertDesc(url, rawText) {
-  const f = fileName(url);
-  if (f) return f;                       // показываем читабельное имя файла
-  if (rawText && rawText.length < 60) return rawText;
-  return host(url) || url;               // коротко
-}
-
-// ------------------------
 
 function extractLinks(html) {
   const out = [];
   const re = /<a[^>]*href=["']([^"']+)["'][^>]*>([\s\S]*?)<\/a>/gi;
   let m;
   while ((m = re.exec(html))) {
-    const href = toAbs(m[1].trim());
+    const href = toAbs((m[1] || '').trim());
     if (!href) continue;
-    const text = m[2].replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim() || href;
-    out.push({ href, text });
+    const text = (m[2] || '').replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
+    out.push({ href, text: text || href });
   }
   return out;
 }
@@ -80,68 +57,116 @@ async function mapLimit(items, limit, fn) {
   let i = 0;
   const workers = Array.from({ length: Math.min(limit, items.length) }, async () => {
     while (i < items.length) {
-      const idx = i++;
-      out[idx] = await fn(items[idx], idx);
+      const idx = i++; out[idx] = await fn(items[idx], idx);
     }
   });
   await Promise.all(workers);
   return out;
 }
 
-function idFromName(name, fallbackPrefix, idx) {
-  const n = String(name).toLowerCase();
-  if (n.includes('esign') && n.includes('vnj')) return 'esign-vnj';
-  if (n.includes('esign')) return 'esign';
-  if (n.includes('ksign') && n.includes('bmw')) return 'ksign-bmw';
-  if (n.includes('ksign')) return 'ksign';
-  return `${fallbackPrefix}-${idx + 1}`;
+function pickBestLink(candidates) {
+  // приоритет: .ipa → github/raw → остальное
+  let best = null;
+  for (const c of candidates) {
+    if (!best) best = c;
+    const u = c.href.toLowerCase();
+    const score =
+      (isIpa(u) ? 3 : 0) +
+      (u.includes('raw.githubusercontent.com') || u.includes('/raw/') ? 2 : 0) +
+      1;
+    c._score = score;
+  }
+  candidates.sort((a,b)=> (b._score||0)-(a._score||0));
+  return candidates[0];
+}
+
+function niceCertName(kind, url, rawText) {
+  const host = (()=>{ try{ return new URL(url).host }catch{ return '' } })();
+  if (kind === 'dns') return 'DNS / Profile';
+  if (host.startsWith('cert.')) return 'Certificate Pack';
+  if (url.toLowerCase().includes('github')) return 'Certificate Pack';
+  if (isCertFile(url)) return 'Certificate';
+  return 'Certificate';
+}
+function shortDesc(url, rawText) {
+  try {
+    const u = new URL(url);
+    const last = decodeURIComponent(u.pathname.split('/').filter(Boolean).pop() || '');
+    if (last) return last;
+    return u.host;
+  } catch { return rawText.slice(0, 60); }
+}
+
+function idFrom(text, fallback, i) {
+  const t = text.toLowerCase();
+  if (t.includes('ksign') && t.includes('bmw')) return 'ksign-bmw';
+  if (t.includes('ksign')) return 'ksign';
+  if (t.includes('esign') && t.includes('vnj')) return 'esign-vnj';
+  if (t.includes('esign')) return 'esign';
+  return `${fallback}-${i+1}`;
 }
 
 async function main() {
   const html = await fetchText(BASE);
   const links = extractLinks(html);
 
-  const items = [];
+  // Сгруппируем по "семействам" инструментов, чтобы выбрать лучшую ссылку
+  const groups = {
+    ksign: [], esign: [], 'ksign-bmw': [], 'esign-vnj': []
+  };
+  const certs = [];
+  const dns = [];
+
   for (const L of links) {
     const kind = classify(L.href, L.text);
     if (!kind) continue;
-    items.push({ kind, name: L.text, url: L.href });
+
+    const txt = (L.text || '').toLowerCase();
+    if (kind === 'app') {
+      if (txt.includes('ksign') && txt.includes('bmw')) groups['ksign-bmw'].push(L);
+      else if (txt.includes('ksign')) groups.ksign.push(L);
+      else if (txt.includes('esign') && txt.includes('vnj')) groups['esign-vnj'].push(L);
+      else if (txt.includes('esign')) groups.esign.push(L);
+      else groups.ksign.push(L); // в сомнительных случаях пусть уйдёт в ksign
+    } else if (kind === 'dns') {
+      dns.push(L);
+    } else if (kind === 'certificate') {
+      certs.push(L);
+    }
   }
 
-  await mapLimit(items, 6, async (it) => {
-    it.status = await reachable(it.url);
-    return it;
-  });
-
-  // Сборка итогового JSON
-  const seen = new Set();
+  // Собираем tools
   const tools = [];
+  for (const [key, arr] of Object.entries(groups)) {
+    if (!arr.length) continue;
+    const best = pickBestLink(arr);
+    const name =
+      key === 'ksign-bmw' ? 'KSign BMW' :
+      key === 'esign-vnj' ? 'eSign VNJ' :
+      key === 'esign' ? 'eSign' : 'KSign';
+
+    tools.push({ id: key, name, url: best.href, status: false, description: 'Ссылка с khoindvn.io.vn' });
+  }
+
+  // Проверяем доступность (статусы)
+  await mapLimit(tools, 6, async (t)=>{ t.status = await reachable(t.url); return t; });
+
+  // Сертификаты и DNS (красивые имена + описание)
   const certificates = [];
+  const seen = new Set();
+  for (const item of [...dns.map(x=>({kind:'dns',...x})), ...certs.map(x=>({kind:'certificate',...x}))]) {
+    if (seen.has(item.href)) continue; seen.add(item.href);
+    const name = niceCertName(item.kind, item.href, item.text);
+    const desc = shortDesc(item.href, item.text);
+    certificates.push({
+      id: idFrom(name + ' ' + desc, 'cert', certificates.length),
+      name,
+      description: desc,
+      url: item.href
+    });
+  }
 
-  items.forEach((it, i) => {
-    if (seen.has(it.url)) return;
-    seen.add(it.url);
-
-    if (it.kind === 'app') {
-      tools.push({
-        id: idFromName(it.name, 'app', tools.length),
-        name: it.name,                      // реальное имя из источника
-        status: !!it.status,                // ✔/✖
-        description: 'Ссылка с khoindvn.io.vn',
-        url: it.url
-      });
-    } else {
-      const friendlyName = prettyCertName(it.url, it.name, it.kind);
-      const desc = prettyCertDesc(it.url, it.name);
-      certificates.push({
-        id: idFromName(friendlyName + '-' + desc, 'cert', certificates.length),
-        name: friendlyName,                 // красивое короткое имя
-        description: desc,                  // короткое описание (имя файла/хост)
-        url: it.url
-      });
-    }
-  });
-
+  // Запись файлов
   const outDir = path.join(__dirname, '..', 'data');
   fs.mkdirSync(outDir, { recursive: true });
 
@@ -152,14 +177,11 @@ async function main() {
     source: BASE,
     last_synced: new Date().toISOString(),
     apps: tools,
-    certificates,
+    certificates
   };
   fs.writeFileSync(path.join(outDir, 'khoindvn.json'), JSON.stringify(khoindvn, null, 2), 'utf8');
 
   console.log(`OK: tools=${tools.length}, certificates=${certificates.length}`);
 }
 
-main().catch((e) => {
-  console.error('UPDATE FAILED:', e);
-  process.exit(1);
-});
+main().catch(e => { console.error('UPDATE FAILED:', e); process.exit(1); });
