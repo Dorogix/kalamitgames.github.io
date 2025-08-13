@@ -1,1 +1,17 @@
-{}
+{
+  "tools": [],
+  "certificates": [
+    {
+      "id": "cert-1",
+      "name": "Certificate",
+      "description": "https://cert.khoindvn.io.vn/",
+      "url": "https://cert.khoindvn.io.vn/"
+    },
+    {
+      "id": "cert-2",
+      "name": "Certificate",
+      "description": "https://github.com/esigncert/khoindvn/raw/refs/heads/main/document/DNS/Certs-Khoindvn.zip",
+      "url": "https://github.com/esigncert/khoindvn/raw/refs/heads/main/document/DNS/Certs-Khoindvn.zip"
+    }
+  ]
+}
