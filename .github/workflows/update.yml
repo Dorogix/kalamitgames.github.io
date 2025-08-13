@@ -2,17 +2,18 @@ name: Update Statuses
 
 on:
   schedule:
-    - cron: "0 * * * *"      # каждый час
+    - cron: "0 * * * *"      # запускаем каждый час
   push:
-    branches: [ main ]       # плюс при каждом твоём коммите в main
-  workflow_dispatch:          # и вручную по кнопке
+    branches: [ main ]       # и при каждом твоём коммите в main
+  workflow_dispatch:          # плюс ручной запуск из вкладки Actions
 
 permissions:
-  contents: write             # нужно для git push
+  contents: write             # нужно, чтобы бот мог пушить изменения
 
 jobs:
   update:
     runs-on: ubuntu-latest
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -28,21 +29,19 @@ jobs:
       - name: Run update script
         run: node scripts/update.js
 
-     - name: Commit & push if changed
-  run: |
-    git config user.name "github-actions[bot]"
-    git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+      # 🔧 Исправленный шаг коммита: добавляем все изменения в data/ и коммитим только если есть что коммитить
+      - name: Commit & push if changed
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
-    # Добавляем все изменения в папке data
-    git add -A data
+          # Добавляем все изменения в папке data (и новые файлы тоже)
+          git add -A data
 
-    # Если изменений нет — пропускаем
-    if git diff --cached --quiet; then
-      echo "No changes to commit"
-    else
-      git commit -m "chore: auto-sync khoindvn [skip ci]"
-      git push
-    fi
+          # Если изменений нет — выходим без ошибки
+          if git diff --cached --quiet; then
+            echo "No changes to commit"
           else
-            echo "No changes"
+            git commit -m "chore: auto-sync khoindvn [skip ci]"
+            git push
           fi
