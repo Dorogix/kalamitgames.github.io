@@ -1,14 +1,14 @@
-// scripts/update.js — CommonJS, Node 18+ (встроенный fetch), без внешних зависимостей
-// Парсит https://khoindvn.io.vn/ и формирует:
-//   - data/statuses.json  (для фронта: tools + certificates)
-//   - data/khoindvn.json  (доп. инфо: источник, last_synced)
+// scripts/update.js — Node 18+, CommonJS, без внешних пакетов
+// Собирает данные с https://khoindvn.io.vn/ и пишет:
+//   data/statuses.json   ← для фронта (tools + certificates + dns)
+//   data/khoindvn.json   ← доп. инфо с last_synced
 
 const fs = require('node:fs');
 const path = require('node:path');
 
 const BASE = 'https://khoindvn.io.vn/';
 
-// ---------- utils ----------
+// ---------- утилиты ----------
 async function fetchText(url) {
   const r = await fetch(url, { headers: { 'user-agent': 'kalamit-sync/1.0' } });
   if (!r.ok) throw new Error(`GET ${url} -> ${r.status}`);
@@ -59,11 +59,9 @@ function fileName(url) {
     return decodeURIComponent(last);
   } catch { return '' }
 }
-function host(url) {
-  try { return new URL(url).host } catch { return '' }
-}
+function host(url) { try { return new URL(url).host } catch { return '' } }
 
-// ---------- classification / scoring ----------
+// ---------- классификация/скоринг ----------
 const isIpa          = (u) => /\.ipa(\?|$)/i.test(u);
 const isArchive      = (u) => /\.(zip|rar|7z)(\?|$)/i.test(u);
 const isCertFile     = (u) => /\.(cer|crt|pem)(\?|$)/i.test(u);
@@ -81,18 +79,13 @@ function classify(href, text='') {
 
   if (isIpa(h)) return 'app';
   if (/ksign|esign/.test(t) || /ksign|esign/.test(h)) return 'app';
-
   return null;
 }
 
 function looksLikeNotApp(u) {
   return (
-    isArchive(u) ||
-    isCertFile(u) ||
-    isMobileConfig(u) ||
-    hasCertish(u) ||
-    hasDnsish(u) ||
-    isDocPath(u)
+    isArchive(u) || isCertFile(u) || isMobileConfig(u) ||
+    hasCertish(u) || hasDnsish(u) || isDocPath(u)
   );
 }
 
@@ -110,19 +103,15 @@ function pickBestLink(candidates, toolKey) {
     const t = c.text.toLowerCase();
     let score = 0;
 
-    if (isIpa(u)) score += 100;
-    if (rxTool.test(u) || rxTool.test(t)) score += 30;
-    if (/download|install|release|raw/.test(u)) score += 10;
+    if (isIpa(u)) score += 100;                                        // .ipa — топ
+    if (rxTool.test(u) || rxTool.test(t)) score += 30;                 // совпадение имени
+    if (/download|install|release|raw/.test(u)) score += 10;           // слова-сигналы
     if (u.includes('raw.githubusercontent.com') || u.includes('/raw/')) score += 8;
     if (u.includes('github.com')) score += 5;
 
-    if (u.includes('document/')) score -= 40;
-    if (u.includes('/dns')) score -= 40;
-    if (u.includes('cert')) score -= 40;
-
+    if (u.includes('document/') || u.includes('/dns') || u.includes('cert')) score -= 40;
     c._score = score;
   }
-
   pool.sort((a,b)=> (b._score||0)-(a._score||0));
   return pool[0] || candidates[0];
 }
@@ -151,7 +140,7 @@ function idFrom(text, fallback, i) {
   return `${fallback}-${i+1}`;
 }
 
-// ---------- main ----------
+// ---------- основной код ----------
 async function main() {
   const html = await fetchText(BASE);
   const links = extractLinks(html);
@@ -178,6 +167,7 @@ async function main() {
     }
   }
 
+  // Tools
   const tools = [];
   for (const [key, arr] of Object.entries(groups)) {
     if (!arr.length) continue;
@@ -187,46 +177,40 @@ async function main() {
       key === 'esign-vnj' ? 'eSign VNJ' :
       key === 'esign'     ? 'eSign'     : 'KSign';
 
-    tools.push({
-      id: key,
-      name,
-      url: best.href,
-      status: false,
-      description: 'Ссылка с khoindvn.io.vn'
-    });
+    tools.push({ id: key, name, url: best.href, status: false, description: 'Ссылка с khoindvn.io.vn' });
   }
 
+  // Проверяем статус ссылок (✔/✖)
   await mapLimit(tools, 6, async (t)=>{ t.status = await reachable(t.url); return t; });
 
+  // Certificates + DNS
   const certificates = [];
   const seen = new Set();
   for (const item of [...dns.map(x=>({kind:'dns',...x})), ...certs.map(x=>({kind:'certificate',...x}))]) {
     if (seen.has(item.href)) continue; seen.add(item.href);
-    const name = prettyCertName(item.kind, item.href);
-    const desc = prettyCertDesc(item.href, item.text);
     certificates.push({
-      id: idFrom(name + ' ' + desc, 'cert', certificates.length),
-      name,
-      description: desc,
+      id: idFrom(item.text || item.href, 'cert', certificates.length),
+      name: prettyCertName(item.kind, item.href),
+      description: prettyCertDesc(item.href, item.text),
       url: item.href
     });
   }
 
+  // DNS главный профиль (первый mobileconfig/DNS)
+  const dnsMain = dns.length ? dns[0].href : null;
+
   const outDir = path.join(__dirname, '..', 'data');
   fs.mkdirSync(outDir, { recursive: true });
 
-  const statuses = { tools, certificates };
+  // Для фронта
+  const statuses = { tools, certificates, dns: { install: dnsMain } };
   fs.writeFileSync(path.join(outDir, 'statuses.json'), JSON.stringify(statuses, null, 2), 'utf8');
 
-  const khoindvn = {
-    source: BASE,
-    last_synced: new Date().toISOString(),
-    apps: tools,
-    certificates
-  };
+  // Доп. инфо
+  const khoindvn = { source: BASE, last_synced: new Date().toISOString(), apps: tools, certificates, dns: { install: dnsMain } };
   fs.writeFileSync(path.join(outDir, 'khoindvn.json'), JSON.stringify(khoindvn, null, 2), 'utf8');
 
-  console.log(`OK: tools=${tools.length}, certificates=${certificates.length}`);
+  console.log(`OK: tools=${tools.length}, certificates=${certificates.length}, dns=${dnsMain ? '1' : '0'}`);
 }
 
 main().catch(e => { console.error('UPDATE FAILED:', e); process.exit(1); });
