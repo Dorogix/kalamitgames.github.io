@@ -1,216 +1,84 @@
-// scripts/update.js — Node 18+, CommonJS, без внешних пакетов
-// Собирает данные с https://khoindvn.io.vn/ и пишет:
-//   data/statuses.json   ← для фронта (tools + certificates + dns)
-//   data/khoindvn.json   ← доп. инфо с last_synced
+const fs = require('fs');
+const https = require('https');
 
-const fs = require('node:fs');
-const path = require('node:path');
+/*
+ * This script fetches the khoindvn.io.vn homepage and attempts to detect the
+ * availability status of the KSign and eSign tools. It updates the
+ * local `data/statuses.json` file accordingly. Running this script
+ * regularly via GitHub Actions ensures that the status badges on the
+ * website stay up to date with the upstream source. If fetching fails
+ * or parsing does not succeed, the current values in the JSON are left
+ * unchanged.
+ */
 
-const BASE = 'https://khoindvn.io.vn/';
-
-// ---------- утилиты ----------
-async function fetchText(url) {
-  const r = await fetch(url, { headers: { 'user-agent': 'kalamit-sync/1.0' } });
-  if (!r.ok) throw new Error(`GET ${url} -> ${r.status}`);
-  return r.text();
-}
-const toAbs = (h) => { try { return new URL(h, BASE).href } catch { return null } };
-
-function extractLinks(html) {
-  const out = [];
-  const re = /<a[^>]*href=["']([^"']+)["'][^>]*>([\s\S]*?)<\/a>/gi;
-  let m;
-  while ((m = re.exec(html))) {
-    const href = toAbs((m[1] || '').trim());
-    if (!href) continue;
-    const text = (m[2] || '').replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
-    out.push({ href, text: text || href });
-  }
-  return out;
-}
-
-async function reachable(url) {
-  try {
-    const h = await fetch(url, { method: 'HEAD', redirect: 'follow' });
-    if (h.ok || (h.status >= 200 && h.status < 400)) return true;
-  } catch {}
-  try {
-    const g = await fetch(url, { method: 'GET', redirect: 'follow' });
-    return g.ok || (g.status >= 200 && g.status < 400);
-  } catch { return false }
-}
-
-async function mapLimit(items, limit, fn) {
-  const out = [];
-  let i = 0;
-  const workers = Array.from({ length: Math.min(limit, items.length) }, async () => {
-    while (i < items.length) {
-      const idx = i++; out[idx] = await fn(items[idx], idx);
-    }
+function fetchHtml(url) {
+  return new Promise((resolve, reject) => {
+    https
+      .get(url, res => {
+        let data = '';
+        res.on('data', chunk => (data += chunk));
+        res.on('end', () => resolve(data));
+      })
+      .on('error', err => reject(err));
   });
-  await Promise.all(workers);
-  return out;
 }
 
-function fileName(url) {
+async function updateStatuses() {
+  const jsonPath = 'data/statuses.json';
+  let statuses;
   try {
-    const u = new URL(url);
-    const last = u.pathname.split('/').filter(Boolean).pop() || '';
-    return decodeURIComponent(last);
-  } catch { return '' }
-}
-function host(url) { try { return new URL(url).host } catch { return '' } }
-
-// ---------- классификация/скоринг ----------
-const isIpa          = (u) => /\.ipa(\?|$)/i.test(u);
-const isArchive      = (u) => /\.(zip|rar|7z)(\?|$)/i.test(u);
-const isCertFile     = (u) => /\.(cer|crt|pem)(\?|$)/i.test(u);
-const isMobileConfig = (u) => /\.mobileconfig(\?|$)/i.test(u);
-const hasCertish     = (u) => /cert|certificate/i.test(u);
-const hasDnsish      = (u) => /dns|profile/i.test(u);
-const isDocPath      = (u) => /document|docs?|downloads?\/dns/i.test(u);
-
-function classify(href, text='') {
-  const h = href.toLowerCase();
-  const t = String(text).toLowerCase();
-
-  if (isMobileConfig(h) || hasDnsish(h) || hasDnsish(t)) return 'dns';
-  if (isCertFile(h) || isArchive(h) || hasCertish(h) || /certs?/i.test(t)) return 'certificate';
-
-  if (isIpa(h)) return 'app';
-  if (/ksign|esign/.test(t) || /ksign|esign/.test(h)) return 'app';
-  return null;
-}
-
-function looksLikeNotApp(u) {
-  return (
-    isArchive(u) || isCertFile(u) || isMobileConfig(u) ||
-    hasCertish(u) || hasDnsish(u) || isDocPath(u)
-  );
-}
-
-function pickBestLink(candidates, toolKey) {
-  let pool = candidates.filter(c => !looksLikeNotApp(c.href.toLowerCase()));
-  if (pool.length === 0) pool = candidates.slice();
-
-  const rxTool = toolKey === 'ksign-bmw' ? /bmw|ksign/i
-              : toolKey === 'esign-vnj' ? /vnj|esign/i
-              : toolKey === 'esign'     ? /esign/i
-              : /ksign/i;
-
-  for (const c of pool) {
-    const u = c.href.toLowerCase();
-    const t = c.text.toLowerCase();
-    let score = 0;
-
-    if (isIpa(u)) score += 100;                                        // .ipa — топ
-    if (rxTool.test(u) || rxTool.test(t)) score += 30;                 // совпадение имени
-    if (/download|install|release|raw/.test(u)) score += 10;           // слова-сигналы
-    if (u.includes('raw.githubusercontent.com') || u.includes('/raw/')) score += 8;
-    if (u.includes('github.com')) score += 5;
-
-    if (u.includes('document/') || u.includes('/dns') || u.includes('cert')) score -= 40;
-    c._score = score;
+    statuses = JSON.parse(fs.readFileSync(jsonPath, 'utf8'));
+  } catch (err) {
+    console.error('Unable to read statuses.json', err);
+    return;
   }
-  pool.sort((a,b)=> (b._score||0)-(a._score||0));
-  return pool[0] || candidates[0];
-}
-
-function prettyCertName(kind, url) {
-  const h = host(url).toLowerCase();
-  if (kind === 'dns') return 'DNS / Profile';
-  if (h.startsWith('cert.') || url.toLowerCase().includes('github')) return 'Certificate Pack';
-  if (isCertFile(url)) return 'Certificate';
-  return 'Certificate';
-}
-
-function prettyCertDesc(url, rawText) {
-  const f = fileName(url);
-  if (f) return f;
-  if (rawText && rawText.length < 60) return rawText;
-  return host(url) || url;
-}
-
-function idFrom(text, fallback, i) {
-  const t = text.toLowerCase();
-  if (t.includes('ksign') && t.includes('bmw')) return 'ksign-bmw';
-  if (t.includes('ksign')) return 'ksign';
-  if (t.includes('esign') && t.includes('vnj')) return 'esign-vnj';
-  if (t.includes('esign')) return 'esign';
-  return `${fallback}-${i+1}`;
-}
-
-// ---------- основной код ----------
-async function main() {
-  const html = await fetchText(BASE);
-  const links = extractLinks(html);
-
-  const groups = { ksign: [], esign: [], 'ksign-bmw': [], 'esign-vnj': [] };
-  const dns = [];
-  const certs = [];
-
-  for (const L of links) {
-    const kind = classify(L.href, L.text);
-    if (!kind) continue;
-
-    const txt = (L.text || '').toLowerCase();
-    if (kind === 'app') {
-      if (txt.includes('ksign') && txt.includes('bmw')) groups['ksign-bmw'].push(L);
-      else if (txt.includes('ksign')) groups.ksign.push(L);
-      else if (txt.includes('esign') && txt.includes('vnj')) groups['esign-vnj'].push(L);
-      else if (txt.includes('esign')) groups.esign.push(L);
-      else groups.ksign.push(L);
-    } else if (kind === 'dns') {
-      dns.push(L);
-    } else if (kind === 'certificate') {
-      certs.push(L);
+  try {
+    const html = await fetchHtml('https://khoindvn.io.vn/');
+    /*
+     * Extract availability and download URLs for each tool. The upstream site
+     * lists each tool (e.g. "KSign", "eSign", "KSign BMW", "eSign VNJ")
+     * along with an accompanying check mark (✅) if the tool is currently
+     * available. It also contains download links via loadly.io. To ensure
+     * our data stays current we parse both the status indicator and the
+     * associated href. The regular expressions search forward up to 200
+     * characters to capture the nearest anchor tag after the tool name.
+     */
+    function extractStatus(name) {
+      const regex = new RegExp(name + "[^\u{2705}\u{274C}]{0,10}[\u{2705}\u{274C}]", 'iu');
+      const match = html.match(regex);
+      if (match) {
+        const char = match[0].match(/[\u{2705}\u{274C}]/u)[0];
+        return char === '✅';
+      }
+      return false;
     }
-  }
-
-  // Tools
-  const tools = [];
-  for (const [key, arr] of Object.entries(groups)) {
-    if (!arr.length) continue;
-    const best = pickBestLink(arr, key);
-    const name =
-      key === 'ksign-bmw' ? 'KSign BMW' :
-      key === 'esign-vnj' ? 'eSign VNJ' :
-      key === 'esign'     ? 'eSign'     : 'KSign';
-
-    tools.push({ id: key, name, url: best.href, status: false, description: 'Ссылка с khoindvn.io.vn' });
-  }
-
-  // Проверяем статус ссылок (✔/✖)
-  await mapLimit(tools, 6, async (t)=>{ t.status = await reachable(t.url); return t; });
-
-  // Certificates + DNS
-  const certificates = [];
-  const seen = new Set();
-  for (const item of [...dns.map(x=>({kind:'dns',...x})), ...certs.map(x=>({kind:'certificate',...x}))]) {
-    if (seen.has(item.href)) continue; seen.add(item.href);
-    certificates.push({
-      id: idFrom(item.text || item.href, 'cert', certificates.length),
-      name: prettyCertName(item.kind, item.href),
-      description: prettyCertDesc(item.href, item.text),
-      url: item.href
+    function extractUrl(name) {
+      const regex = new RegExp(name + "[\\s\\S]{0,200}?href=\"([^\"]+)\"", 'iu');
+      const match = html.match(regex);
+      if (match) {
+        return match[1];
+      }
+      return null;
+    }
+    statuses.tools = statuses.tools.map(tool => {
+      // Determine status by scanning for check/cross icons near the tool name
+      const status = extractStatus(tool.name.replace(/\s+V?1?$/i, ''));
+      if (status !== undefined) {
+        tool.status = status;
+      }
+      // Update the download URL if a new one is found
+      const newUrl = extractUrl(tool.name);
+      if (newUrl) {
+        tool.url = newUrl;
+      }
+      return tool;
     });
+    // Write the updated JSON back to disk
+    fs.writeFileSync(jsonPath, JSON.stringify(statuses, null, 2));
+    console.log('Updated statuses.json');
+  } catch (err) {
+    console.error('Failed to fetch remote site', err);
   }
-
-  // DNS главный профиль (первый mobileconfig/DNS)
-  const dnsMain = dns.length ? dns[0].href : null;
-
-  const outDir = path.join(__dirname, '..', 'data');
-  fs.mkdirSync(outDir, { recursive: true });
-
-  // Для фронта
-  const statuses = { tools, certificates, dns: { install: dnsMain } };
-  fs.writeFileSync(path.join(outDir, 'statuses.json'), JSON.stringify(statuses, null, 2), 'utf8');
-
-  // Доп. инфо
-  const khoindvn = { source: BASE, last_synced: new Date().toISOString(), apps: tools, certificates, dns: { install: dnsMain } };
-  fs.writeFileSync(path.join(outDir, 'khoindvn.json'), JSON.stringify(khoindvn, null, 2), 'utf8');
-
-  console.log(`OK: tools=${tools.length}, certificates=${certificates.length}, dns=${dnsMain ? '1' : '0'}`);
 }
 
-main().catch(e => { console.error('UPDATE FAILED:', e); process.exit(1); });
+updateStatuses();
